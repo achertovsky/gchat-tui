@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -128,6 +130,7 @@ func (o *OAuth) authorize(ctx context.Context) (*oauth2.Token, error) {
 		oauth2.AccessTypeOffline,
 		oauth2.S256ChallengeOption(verifier),
 	)
+	_ = openBrowser(url)
 	if o.prompt != nil {
 		o.prompt(url)
 	}
@@ -185,6 +188,19 @@ func randomValue(size int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func openBrowser(url string) error {
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		command = exec.Command("open", url)
+	case "windows":
+		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		command = exec.Command("xdg-open", url)
+	}
+	return command.Start()
 }
 
 var _ Provider = (*OAuth)(nil)

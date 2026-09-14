@@ -28,8 +28,10 @@ func main() {
 		switch os.Args[1] {
 		case "login":
 			provider, err := auth.New(config.OAuthClientConfigPath, config.DataDir, func(url string) {
-				fmt.Fprintln(os.Stderr, "Open this URL in a browser to authenticate:")
+				fmt.Fprintln(os.Stderr, "Opening a browser to authenticate.")
+				fmt.Fprintln(os.Stderr, "If no browser opens, copy this URL into one:")
 				fmt.Fprintln(os.Stderr, url)
+				fmt.Fprintln(os.Stderr, "Waiting for authorization; press Ctrl+C to cancel.")
 			})
 			if err == nil {
 				err = provider.Login(context.Background())
