@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/achertovsky/gchat-tui/internal/ui"
+)
 
 func main() {
-	fmt.Println("gchat-tui is not implemented yet.")
+	if err := ui.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
