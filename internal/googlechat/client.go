@@ -51,8 +51,8 @@ type APIError struct {
 }
 
 var ErrInvitationPending = errors.New(
-	"this direct-message invitation is pending and must be accepted before sending a message\n" +
-		"Open Google Chat to accept it: https://chat.google.com/",
+	"This direct-message invitation has not been accepted yet.\n" +
+		"Accept it in Google Chat before sending: https://chat.google.com/",
 )
 
 func (e *APIError) Error() string {

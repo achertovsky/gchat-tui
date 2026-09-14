@@ -157,6 +157,10 @@ func main() {
 			}
 			membershipState, err := chatClient.MembershipState(ctx, conversation.Name, email)
 			if err != nil {
+				var apiErr *googlechat.APIError
+				if errors.As(err, &apiErr) && (apiErr.StatusCode == 403 || apiErr.StatusCode == 404) {
+					return ui.Message{}, googlechat.ErrInvitationPending
+				}
 				logger.Warn(fmt.Sprintf("membership check failed: %v", err))
 				return ui.Message{}, err
 			}
