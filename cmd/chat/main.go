@@ -131,7 +131,34 @@ func main() {
 		}
 		return page, nil
 	}
-	if err := ui.Run(loadConversations, loadMessages); err != nil {
+	sendMessage := func(ctx context.Context, conversationName, text string) (ui.Message, error) {
+		if authErr != nil {
+			logger.Warn("message sending failed: authentication initialization failed")
+			return ui.Message{}, authErr
+		}
+		if _, err := provider.Token(ctx); err != nil {
+			logger.Warn("message sending failed: OAuth credentials are unavailable or invalid")
+			return ui.Message{}, err
+		}
+		message, err := chatClient.CreateMessage(ctx, conversationName, text)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("message sending failed: %v", err))
+			return ui.Message{}, err
+		}
+		senderName := message.Sender.DisplayName
+		if senderName == "" {
+			senderName = "You"
+		}
+		if message.Text == "" {
+			message.Text = text
+		}
+		return ui.Message{
+			SenderName: senderName,
+			Text:       message.Text,
+			Timestamp:  message.CreateTime,
+		}, nil
+	}
+	if err := ui.Run(loadConversations, loadMessages, sendMessage); err != nil {
 		logger.Error("terminal UI exited with an error")
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

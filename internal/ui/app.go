@@ -2,11 +2,13 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -37,11 +39,16 @@ type MessagePage struct {
 // MessageLoader retrieves a page of messages for a conversation.
 type MessageLoader func(context.Context, string, string) (MessagePage, error)
 
+// MessageSender sends a plain-text message to a conversation.
+type MessageSender func(context.Context, string, string) (Message, error)
+
 type model struct {
 	loader         ConversationLoader
 	messageLoader  MessageLoader
+	messageSender  MessageSender
 	conversations  []Conversation
 	messages       []Message
+	input          textinput.Model
 	cursor         int
 	selected       int
 	loading        bool
@@ -50,16 +57,26 @@ type model struct {
 	messageError   error
 	nextPageToken  string
 	messageRequest int
+	sendRequest    int
+	sending        bool
+	sendError      error
+	sendSuccess    bool
 	scrollOffset   int
 	width          int
 	height         int
 }
 
 // Run starts the terminal UI.
-func Run(loader ConversationLoader, messageLoader MessageLoader) error {
+func Run(loader ConversationLoader, messageLoader MessageLoader, messageSender MessageSender) error {
+	input := textinput.New()
+	input.Placeholder = "Write a message..."
+	input.CharLimit = 32000
+	input.Width = 50
 	_, err := tea.NewProgram(model{
 		loader:        loader,
 		messageLoader: messageLoader,
+		messageSender: messageSender,
+		input:         input,
 		selected:      -1,
 		loading:       true,
 	}, tea.WithAltScreen()).Run()
@@ -73,9 +90,38 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.input.Focused() {
+			switch msg.String() {
+			case "esc":
+				m.input.Blur()
+				return m, nil
+			case "enter":
+				if m.sending {
+					return m, nil
+				}
+				text := m.input.Value()
+				if strings.TrimSpace(text) == "" {
+					m.sendError = errors.New("message text cannot be empty")
+					m.sendSuccess = false
+					return m, nil
+				}
+				m.sending = true
+				m.sendError = nil
+				m.sendSuccess = false
+				m.sendRequest++
+				return m, m.sendMessage(text, m.sendRequest)
+			}
+			if !m.sending {
+				var command tea.Cmd
+				m.input, command = m.input.Update(msg)
+				return m, command
+			}
+			return m, nil
+		}
+		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -90,6 +136,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.messages = nil
 				m.nextPageToken = ""
 				m.messageError = nil
+				m.sendError = nil
+				m.sendSuccess = false
+				m.input.SetValue("")
 				m.messageLoading = true
 				m.scrollOffset = 0
 				m.messageRequest++
@@ -99,6 +148,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.loadError = nil
 			return m, m.loadConversations()
+		case "i":
+			if m.selected >= 0 && !m.sending {
+				m.sendError = nil
+				return m, m.input.Focus()
+			}
 		case "u":
 			if m.selected >= 0 && m.nextPageToken != "" && !m.messageLoading {
 				m.messageLoading = true
@@ -148,6 +202,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 		}
+	case messageSentMsg:
+		if msg.request != m.sendRequest {
+			return m, nil
+		}
+		m.sending = false
+		m.sendError = msg.err
+		m.sendSuccess = msg.err == nil
+		if msg.err == nil {
+			m.messages = append(m.messages, msg.message)
+			sort.SliceStable(m.messages, func(left, right int) bool {
+				return m.messages[left].Timestamp.Before(m.messages[right].Timestamp)
+			})
+			m.input.SetValue("")
+		}
 	}
 
 	return m, nil
@@ -167,7 +235,7 @@ func (m model) View() string {
 	footer := lipgloss.NewStyle().
 		Width(m.width).
 		Foreground(lipgloss.Color("241")).
-		Render("↑/k up  ↓/j down  enter open  u older  pgup/pgdn scroll  r refresh  q quit")
+		Render("↑/k up  ↓/j down  enter open/send  i compose  u older  pgup/pgdn scroll  r refresh  q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content),
@@ -209,27 +277,40 @@ func (m model) content(width, height int) string {
 	}
 
 	title = displayName(m.conversations[m.selected])
+	messageHeight := max(1, height-3)
 	if m.messageLoading {
-		return m.renderContent(width, height, title, []string{"Loading messages..."})
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.renderContent(width, messageHeight, title, []string{"Loading messages..."}),
+			m.composer(width),
+		)
 	}
 	if m.messageError != nil {
-		return m.renderContent(width, height, title, []string{
-			"Unable to load messages.",
-			"",
-			m.messageError.Error(),
-			"",
-			"Press Enter to retry.",
-		})
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.renderContent(width, messageHeight, title, []string{
+				"Unable to load messages.",
+				"",
+				m.messageError.Error(),
+				"",
+				"Press Enter to retry.",
+			}),
+			m.composer(width),
+		)
 	}
 	if len(m.messages) == 0 {
-		return m.renderContent(width, height, title, []string{"No messages in this conversation."})
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.renderContent(width, messageHeight, title, []string{"No messages in this conversation."}),
+			m.composer(width),
+		)
 	}
 
 	lines := renderMessages(m.messages)
 	if m.nextPageToken != "" {
 		lines = append(lines, "", "Press u to load older messages.")
 	}
-	return m.renderContent(width, height, title, lines)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.renderContent(width, messageHeight, title, lines),
+		m.composer(width),
+	)
 }
 
 type conversationsLoadedMsg struct {
@@ -266,6 +347,23 @@ func (m model) loadMessages(pageToken string, older bool) tea.Cmd {
 	}
 }
 
+type messageSentMsg struct {
+	message Message
+	request int
+	err     error
+}
+
+func (m model) sendMessage(text string, requestID int) tea.Cmd {
+	conversationName := m.conversations[m.selected].Name
+	return func() tea.Msg {
+		if m.messageSender == nil {
+			return messageSentMsg{request: requestID, err: errors.New("message sending is not configured")}
+		}
+		message, err := m.messageSender(context.Background(), conversationName, text)
+		return messageSentMsg{message: message, request: requestID, err: err}
+	}
+}
+
 func (m model) renderContent(width, height int, title string, lines []string) string {
 	availableLines := max(1, height-4)
 	maxOffset := max(0, len(lines)-availableLines)
@@ -297,6 +395,33 @@ func renderMessages(messages []Message) []string {
 		lines = append(lines, fmt.Sprintf("%s  %s", sender, timestamp), text, "")
 	}
 	return lines
+}
+
+func (m model) composer(width int) string {
+	status := "Press i to compose."
+	if m.input.Focused() {
+		status = "Enter sends  Esc stops editing"
+	}
+	if m.sending {
+		status = "Sending..."
+	} else if m.sendError != nil {
+		status = "Send failed: " + m.sendError.Error()
+	} else if m.sendSuccess {
+		status = "Message sent."
+	}
+	inputModel := m.input
+	inputModel.Width = max(1, width-4)
+	input := inputModel.View()
+	if !m.input.Focused() && m.input.Value() == "" {
+		input = "Press i to compose."
+	}
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(3).
+		Padding(0, 2).
+		Border(lipgloss.NormalBorder(), true, false, false, false).
+		BorderForeground(lipgloss.Color("240")).
+		Render(input + "\n" + status)
 }
 
 func displayName(conversation Conversation) string {
