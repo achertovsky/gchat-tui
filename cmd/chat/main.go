@@ -38,15 +38,26 @@ func main() {
 				printOAuthSetup(config.OAuthClientConfigPath)
 				os.Exit(1)
 			}
-			if err == nil {
-				err = provider.Login(context.Background())
+			if err != nil {
+				logger.Error("OAuth client configuration is invalid")
+				fmt.Fprintln(os.Stderr, "authentication error:", err)
+				os.Exit(1)
 			}
+			if _, err := provider.Token(context.Background()); err == nil {
+				fmt.Fprintln(os.Stderr, "You are already authenticated.")
+				logger.Info("OAuth login skipped because valid credentials already exist")
+				return
+			} else if !errors.Is(err, auth.ErrNotAuthenticated) {
+				logger.Warn("Stored OAuth credentials could not be used; requesting authorization again")
+			}
+			err = provider.Login(context.Background())
 			if err != nil {
 				logger.Error("OAuth login failed")
 				fmt.Fprintln(os.Stderr, "authentication error:", err)
 				os.Exit(1)
 			}
 			logger.Info("OAuth login completed")
+			fmt.Fprintln(os.Stderr, "Authentication successful. OAuth credentials have been saved.")
 			return
 		case "logout":
 			if err := auth.Logout(config.DataDir); err != nil {
