@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -45,14 +46,19 @@ type Message struct {
 type APIError struct {
 	Operation  string
 	StatusCode int
+	Detail     string
 	Hint       string
 }
 
 func (e *APIError) Error() string {
-	if e.Hint != "" {
-		return fmt.Sprintf("Google Chat API %s failed (HTTP %d): %s", e.Operation, e.StatusCode, e.Hint)
+	base := fmt.Sprintf("Google Chat API %s failed (HTTP %d)", e.Operation, e.StatusCode)
+	if e.Detail != "" {
+		base += ": " + e.Detail
 	}
-	return fmt.Sprintf("Google Chat API %s failed (HTTP %d)", e.Operation, e.StatusCode)
+	if e.Hint != "" {
+		base += ". " + e.Hint
+	}
+	return base
 }
 
 // Client provides typed, context-aware access to Google Chat.
@@ -208,13 +214,23 @@ func sortMessages(messages []Message) {
 func apiError(operation string, err error) error {
 	var googleError *googleapi.Error
 	if errors.As(err, &googleError) {
-		apiError := &APIError{Operation: operation, StatusCode: googleError.Code}
+		apiError := &APIError{
+			Operation:  operation,
+			StatusCode: googleError.Code,
+			Detail:     sanitizeAPIError(googleError.Message),
+		}
 		if operation == "create message" && googleError.Code == http.StatusNotFound {
 			apiError.Hint = "configure the Google Chat app in Google Cloud and verify that the signed-in user is a member of this conversation"
 		}
 		return apiError
 	}
 	return fmt.Errorf("Google Chat API %s: %w", operation, err)
+}
+
+var sensitiveErrorValue = regexp.MustCompile(`(?i)\b(access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|authorization)\s*[:=]\s*\S+`)
+
+func sanitizeAPIError(message string) string {
+	return sensitiveErrorValue.ReplaceAllString(message, "$1=[redacted]")
 }
 
 func isAPIStatus(err error, statusCode int) bool {
