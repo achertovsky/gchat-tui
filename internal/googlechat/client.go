@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -97,29 +98,43 @@ func (c *Client) ListSpaces(ctx context.Context) ([]Space, error) {
 
 // ListMessages returns every message in a space.
 func (c *Client) ListMessages(ctx context.Context, spaceName string) ([]Message, error) {
-	if !validSpaceName(spaceName) {
-		return nil, errors.New("space name must use the format spaces/{space}")
-	}
-
 	var messages []Message
 	var pageToken string
 	for {
-		response, err := c.service.Spaces.Messages.List(spaceName).
-			PageSize(1000).
-			PageToken(pageToken).
-			Context(ctx).
-			Do()
+		page, nextPageToken, err := c.ListMessagesPage(ctx, spaceName, pageToken)
 		if err != nil {
-			return nil, apiError("list messages", err)
+			return nil, err
 		}
-		for _, message := range response.Messages {
-			messages = append(messages, toMessage(message))
-		}
-		if response.NextPageToken == "" {
+		messages = append(page, messages...)
+		if nextPageToken == "" {
 			return messages, nil
 		}
-		pageToken = response.NextPageToken
+		pageToken = nextPageToken
 	}
+}
+
+// ListMessagesPage returns a chronological page of messages and a token for
+// older messages. An empty token means there are no more messages.
+func (c *Client) ListMessagesPage(ctx context.Context, spaceName, pageToken string) ([]Message, string, error) {
+	if !validSpaceName(spaceName) {
+		return nil, "", errors.New("space name must use the format spaces/{space}")
+	}
+
+	response, err := c.service.Spaces.Messages.List(spaceName).
+		OrderBy("DESC").
+		PageSize(100).
+		PageToken(pageToken).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, "", apiError("list messages", err)
+	}
+	messages := make([]Message, len(response.Messages))
+	for index, message := range response.Messages {
+		messages[index] = toMessage(message)
+	}
+	sortMessages(messages)
+	return messages, response.NextPageToken, nil
 }
 
 // CreateMessage sends a plain-text message to a space.
@@ -165,6 +180,18 @@ func toUser(user *chatapi.User) User {
 		return User{}
 	}
 	return User{Name: user.Name, DisplayName: user.DisplayName, Type: user.Type}
+}
+
+func sortMessages(messages []Message) {
+	sort.SliceStable(messages, func(left, right int) bool {
+		if messages[left].CreateTime.IsZero() {
+			return false
+		}
+		if messages[right].CreateTime.IsZero() {
+			return true
+		}
+		return messages[left].CreateTime.Before(messages[right].CreateTime)
+	})
 }
 
 func apiError(operation string, err error) error {

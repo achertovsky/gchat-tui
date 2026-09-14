@@ -100,7 +100,35 @@ func main() {
 		}
 		return conversations, nil
 	}
-	if err := ui.Run(loadConversations); err != nil {
+	loadMessages := func(ctx context.Context, conversationName, pageToken string) (ui.MessagePage, error) {
+		if authErr != nil {
+			return ui.MessagePage{}, authErr
+		}
+		if _, err := provider.Token(ctx); err != nil {
+			return ui.MessagePage{}, err
+		}
+		messages, nextPageToken, err := chatClient.ListMessagesPage(ctx, conversationName, pageToken)
+		if err != nil {
+			return ui.MessagePage{}, err
+		}
+		page := ui.MessagePage{
+			Messages:      make([]ui.Message, len(messages)),
+			NextPageToken: nextPageToken,
+		}
+		for index, message := range messages {
+			senderName := message.Sender.DisplayName
+			if senderName == "" {
+				senderName = message.Sender.Name
+			}
+			page.Messages[index] = ui.Message{
+				SenderName: senderName,
+				Text:       message.Text,
+				Timestamp:  message.CreateTime,
+			}
+		}
+		return page, nil
+	}
+	if err := ui.Run(loadConversations, loadMessages); err != nil {
 		logger.Error("terminal UI exited with an error")
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

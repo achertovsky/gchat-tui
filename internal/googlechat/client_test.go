@@ -65,7 +65,7 @@ func TestListMessagesPaginates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
-	if len(messages) != 2 || messages[1].Text != "second" {
+	if len(messages) != 2 || messages[0].Text != "second" {
 		t.Errorf("messages = %#v, want two paginated messages", messages)
 	}
 }

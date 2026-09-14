@@ -3,7 +3,9 @@ package ui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,20 +21,48 @@ type Conversation struct {
 // ConversationLoader retrieves the conversations displayed by the TUI.
 type ConversationLoader func(context.Context) ([]Conversation, error)
 
+// Message contains presentation-ready data for a conversation message.
+type Message struct {
+	SenderName string
+	Text       string
+	Timestamp  time.Time
+}
+
+// MessagePage contains a chronological page and a token for older messages.
+type MessagePage struct {
+	Messages      []Message
+	NextPageToken string
+}
+
+// MessageLoader retrieves a page of messages for a conversation.
+type MessageLoader func(context.Context, string, string) (MessagePage, error)
+
 type model struct {
-	loader        ConversationLoader
-	conversations []Conversation
-	cursor        int
-	selected      int
-	loading       bool
-	loadError     error
-	width         int
-	height        int
+	loader         ConversationLoader
+	messageLoader  MessageLoader
+	conversations  []Conversation
+	messages       []Message
+	cursor         int
+	selected       int
+	loading        bool
+	loadError      error
+	messageLoading bool
+	messageError   error
+	nextPageToken  string
+	messageRequest int
+	scrollOffset   int
+	width          int
+	height         int
 }
 
 // Run starts the terminal UI.
-func Run(loader ConversationLoader) error {
-	_, err := tea.NewProgram(model{loader: loader, selected: -1, loading: true}, tea.WithAltScreen()).Run()
+func Run(loader ConversationLoader, messageLoader MessageLoader) error {
+	_, err := tea.NewProgram(model{
+		loader:        loader,
+		messageLoader: messageLoader,
+		selected:      -1,
+		loading:       true,
+	}, tea.WithAltScreen()).Run()
 	return err
 }
 
@@ -57,11 +87,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.conversations) > 0 {
 				m.selected = m.cursor
+				m.messages = nil
+				m.nextPageToken = ""
+				m.messageError = nil
+				m.messageLoading = true
+				m.scrollOffset = 0
+				m.messageRequest++
+				return m, m.loadMessages("", false)
 			}
 		case "r":
 			m.loading = true
 			m.loadError = nil
 			return m, m.loadConversations()
+		case "u":
+			if m.selected >= 0 && m.nextPageToken != "" && !m.messageLoading {
+				m.messageLoading = true
+				m.messageError = nil
+				m.messageRequest++
+				return m, m.loadMessages(m.nextPageToken, true)
+			}
+		case "pgup", "ctrl+u":
+			m.scrollOffset = max(0, m.scrollOffset-5)
+		case "pgdown", "ctrl+d":
+			m.scrollOffset += 5
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -73,6 +121,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.conversations = msg.conversations
 			m.cursor = 0
 			m.selected = -1
+		}
+	case messagesLoadedMsg:
+		if msg.request != m.messageRequest {
+			return m, nil
+		}
+		m.messageLoading = false
+		m.messageError = msg.err
+		if msg.err == nil {
+			if msg.older {
+				m.messages = append(msg.page.Messages, m.messages...)
+			} else {
+				m.messages = msg.page.Messages
+			}
+			sort.SliceStable(m.messages, func(left, right int) bool {
+				if m.messages[left].Timestamp.IsZero() {
+					return false
+				}
+				if m.messages[right].Timestamp.IsZero() {
+					return true
+				}
+				return m.messages[left].Timestamp.Before(m.messages[right].Timestamp)
+			})
+			m.nextPageToken = msg.page.NextPageToken
+			if msg.older {
+				m.scrollOffset = 0
+			}
 		}
 	}
 
@@ -93,7 +167,7 @@ func (m model) View() string {
 	footer := lipgloss.NewStyle().
 		Width(m.width).
 		Foreground(lipgloss.Color("241")).
-		Render("↑/k up  ↓/j down  enter select  r refresh  q quit")
+		Render("↑/k up  ↓/j down  enter open  u older  pgup/pgdn scroll  r refresh  q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content),
@@ -129,21 +203,27 @@ func (m model) sidebar(width, height int) string {
 }
 
 func (m model) content(width, height int) string {
-	body := "Choose a conversation and press Enter."
 	title := "Messages"
-	if m.selected >= 0 && m.selected < len(m.conversations) {
-		title = displayName(m.conversations[m.selected])
-		body = fmt.Sprintf(
-			"Placeholder messages for %s\n\nNo messages have been loaded yet.",
-			title,
-		)
+	if m.selected < 0 || m.selected >= len(m.conversations) {
+		return m.renderContent(width, height, title, []string{"Choose a conversation and press Enter."})
 	}
 
-	return lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		Padding(1, 2).
-		Render(title + "\n\n" + body)
+	title = displayName(m.conversations[m.selected])
+	if m.messageLoading {
+		return m.renderContent(width, height, title, []string{"Loading messages..."})
+	}
+	if m.messageError != nil {
+		return m.renderContent(width, height, title, []string{"Unable to load messages.", "", "Press Enter to retry."})
+	}
+	if len(m.messages) == 0 {
+		return m.renderContent(width, height, title, []string{"No messages in this conversation."})
+	}
+
+	lines := renderMessages(m.messages)
+	if m.nextPageToken != "" {
+		lines = append(lines, "", "Press u to load older messages.")
+	}
+	return m.renderContent(width, height, title, lines)
 }
 
 type conversationsLoadedMsg struct {
@@ -159,6 +239,58 @@ func (m model) loadConversations() tea.Cmd {
 		conversations, err := m.loader(context.Background())
 		return conversationsLoadedMsg{conversations: conversations, err: err}
 	}
+}
+
+type messagesLoadedMsg struct {
+	page    MessagePage
+	older   bool
+	request int
+	err     error
+}
+
+func (m model) loadMessages(pageToken string, older bool) tea.Cmd {
+	conversationName := m.conversations[m.selected].Name
+	requestID := m.messageRequest
+	return func() tea.Msg {
+		if m.messageLoader == nil {
+			return messagesLoadedMsg{request: requestID, err: fmt.Errorf("message loading is not configured")}
+		}
+		page, err := m.messageLoader(context.Background(), conversationName, pageToken)
+		return messagesLoadedMsg{page: page, older: older, request: requestID, err: err}
+	}
+}
+
+func (m model) renderContent(width, height int, title string, lines []string) string {
+	availableLines := max(1, height-4)
+	maxOffset := max(0, len(lines)-availableLines)
+	offset := min(m.scrollOffset, maxOffset)
+	end := min(len(lines), offset+availableLines)
+	body := strings.Join(lines[offset:end], "\n")
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Padding(1, 2).
+		Render(title + "\n\n" + body)
+}
+
+func renderMessages(messages []Message) []string {
+	lines := make([]string, 0, len(messages)*3)
+	for _, message := range messages {
+		sender := strings.TrimSpace(message.SenderName)
+		if sender == "" {
+			sender = "Unknown sender"
+		}
+		timestamp := "Unknown time"
+		if !message.Timestamp.IsZero() {
+			timestamp = message.Timestamp.Local().Format("2006-01-02 15:04")
+		}
+		text := strings.TrimSpace(message.Text)
+		if text == "" {
+			text = "[Message unavailable]"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s", sender, timestamp), text, "")
+	}
+	return lines
 }
 
 func displayName(conversation Conversation) string {
