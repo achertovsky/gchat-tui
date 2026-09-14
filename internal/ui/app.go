@@ -108,7 +108,7 @@ func (m model) sidebar(width, height int) string {
 		if index == m.cursor {
 			prefix = "> "
 		}
-		items = append(items, prefix+displayName(conversation))
+		items = append(items, prefix+conversationLabel(conversation))
 	}
 	body := "Loading conversations..."
 	if m.loadError != nil {
@@ -169,6 +169,19 @@ func displayName(conversation Conversation) string {
 		return conversation.Name
 	}
 	return "Unnamed conversation"
+}
+
+func conversationLabel(conversation Conversation) string {
+	label := "[?]"
+	switch conversation.Type {
+	case "DIRECT_MESSAGE":
+		label = "[DM]"
+	case "GROUP_CHAT":
+		label = "[GC]"
+	case "SPACE":
+		label = "[S]"
+	}
+	return label + " " + displayName(conversation)
 }
 
 func min(a, b int) int {
