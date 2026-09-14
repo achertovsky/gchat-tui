@@ -22,6 +22,7 @@ The application will support:
 - Verify Google Chat API capabilities and required OAuth scopes before relying on them.
 - Keep the TUI independent from the Google Chat API implementation.
 - Prefer simple, idiomatic Go over premature abstractions.
+- Do not write unit tests; validate behavior manually instead.
 
 ## Step order
 
