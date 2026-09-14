@@ -44,6 +44,7 @@ func main() {
 				fmt.Fprintln(os.Stderr, "authentication error:", err)
 				os.Exit(1)
 			}
+			fmt.Fprintln(os.Stderr, "Checking existing credentials...")
 			if _, err := provider.Token(context.Background()); err == nil {
 				fmt.Fprintln(os.Stderr, "You are already authenticated.")
 				logger.Info("OAuth login skipped because valid credentials already exist")
@@ -61,6 +62,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Authentication successful. OAuth credentials have been saved.")
 			return
 		case "logout":
+			fmt.Fprintln(os.Stderr, "Removing stored credentials...")
 			if err := auth.Logout(config.DataDir); err != nil {
 				logger.Error("OAuth logout failed")
 				fmt.Fprintln(os.Stderr, "logout error:", err)

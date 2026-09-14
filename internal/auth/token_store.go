@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
@@ -14,9 +15,13 @@ import (
 const (
 	keyringService = "gchat-tui"
 	keyringUser    = "oauth-token"
+	keyringTimeout = 2 * time.Second
 )
 
-var errTokenNotFound = errors.New("OAuth credentials not found")
+var (
+	errTokenNotFound      = errors.New("OAuth credentials not found")
+	errKeyringUnavailable = errors.New("system credential storage is unavailable")
+)
 
 type tokenStore interface {
 	Load() (*oauth2.Token, error)
@@ -33,7 +38,7 @@ func newTokenStore(dataDir string) tokenStore {
 }
 
 func (s secureTokenStore) Load() (*oauth2.Token, error) {
-	serialized, err := keyring.Get(keyringService, keyringUser)
+	serialized, err := keyringGet()
 	if err == nil {
 		return decodeToken([]byte(serialized))
 	}
@@ -53,14 +58,14 @@ func (s secureTokenStore) Save(token *oauth2.Token) error {
 	if err != nil {
 		return fmt.Errorf("encode OAuth credentials: %w", err)
 	}
-	if err := keyring.Set(keyringService, keyringUser, string(serialized)); err == nil {
+	if err := keyringSet(string(serialized)); err == nil {
 		return nil
 	}
 	return saveTokenFile(s.filePath, serialized)
 }
 
 func (s secureTokenStore) Delete() error {
-	keyringErr := keyring.Delete(keyringService, keyringUser)
+	keyringErr := keyringDelete()
 	fileErr := os.Remove(s.filePath)
 	if errors.Is(fileErr, os.ErrNotExist) {
 		fileErr = nil
@@ -68,10 +73,54 @@ func (s secureTokenStore) Delete() error {
 	if fileErr != nil {
 		return fmt.Errorf("remove fallback credential file: %w", fileErr)
 	}
-	if keyringErr != nil && !errors.Is(keyringErr, keyring.ErrNotFound) {
+	if keyringErr != nil && !errors.Is(keyringErr, keyring.ErrNotFound) && !errors.Is(keyringErr, errKeyringUnavailable) {
 		return fmt.Errorf("delete system credential: %w", keyringErr)
 	}
 	return nil
+}
+
+func keyringGet() (string, error) {
+	type result struct {
+		value string
+		err   error
+	}
+	results := make(chan result, 1)
+	go func() {
+		value, err := keyring.Get(keyringService, keyringUser)
+		results <- result{value: value, err: err}
+	}()
+	select {
+	case result := <-results:
+		return result.value, result.err
+	case <-time.After(keyringTimeout):
+		return "", errKeyringUnavailable
+	}
+}
+
+func keyringSet(value string) error {
+	results := make(chan error, 1)
+	go func() {
+		results <- keyring.Set(keyringService, keyringUser, value)
+	}()
+	select {
+	case err := <-results:
+		return err
+	case <-time.After(keyringTimeout):
+		return errKeyringUnavailable
+	}
+}
+
+func keyringDelete() error {
+	results := make(chan error, 1)
+	go func() {
+		results <- keyring.Delete(keyringService, keyringUser)
+	}()
+	select {
+	case err := <-results:
+		return err
+	case <-time.After(keyringTimeout):
+		return errKeyringUnavailable
+	}
 }
 
 func loadTokenFile(path string) (*oauth2.Token, error) {
