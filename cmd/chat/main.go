@@ -140,7 +140,7 @@ func main() {
 		}
 		return page, nil
 	}
-	sendMessage := func(ctx context.Context, conversationName, text string) (ui.Message, error) {
+	sendMessage := func(ctx context.Context, conversation ui.Conversation, text string) (ui.Message, error) {
 		if authErr != nil {
 			logger.Warn("message sending failed: authentication initialization failed")
 			return ui.Message{}, authErr
@@ -149,7 +149,17 @@ func main() {
 			logger.Warn("message sending failed: OAuth credentials are unavailable or invalid")
 			return ui.Message{}, err
 		}
-		message, err := chatClient.CreateMessage(ctx, conversationName, text)
+		if conversation.Type == "DIRECT_MESSAGE" {
+			pending, err := chatClient.HasPendingInvitation(ctx, conversation.Name)
+			if err != nil {
+				logger.Warn(fmt.Sprintf("membership check failed: %v", err))
+				return ui.Message{}, err
+			}
+			if pending {
+				return ui.Message{}, googlechat.ErrInvitationPending
+			}
+		}
+		message, err := chatClient.CreateMessage(ctx, conversation.Name, text)
 		if err != nil {
 			logger.Warn(fmt.Sprintf("message sending failed: %v", err))
 			return ui.Message{}, err

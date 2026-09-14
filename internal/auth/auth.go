@@ -22,6 +22,7 @@ var Scopes = []string{
 	"https://www.googleapis.com/auth/chat.spaces.readonly",
 	"https://www.googleapis.com/auth/chat.messages.readonly",
 	"https://www.googleapis.com/auth/chat.messages.create",
+	"https://www.googleapis.com/auth/chat.memberships.readonly",
 }
 
 var ErrNotAuthenticated = errors.New("not authenticated; run `chat login` first")

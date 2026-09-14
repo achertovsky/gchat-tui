@@ -40,7 +40,7 @@ type MessagePage struct {
 type MessageLoader func(context.Context, string, string) (MessagePage, error)
 
 // MessageSender sends a plain-text message to a conversation.
-type MessageSender func(context.Context, string, string) (Message, error)
+type MessageSender func(context.Context, Conversation, string) (Message, error)
 
 type model struct {
 	loader         ConversationLoader
@@ -356,12 +356,12 @@ type messageSentMsg struct {
 }
 
 func (m model) sendMessage(text string, requestID int) tea.Cmd {
-	conversationName := m.conversations[m.selected].Name
+	conversation := m.conversations[m.selected]
 	return func() tea.Msg {
 		if m.messageSender == nil {
 			return messageSentMsg{request: requestID, err: errors.New("message sending is not configured")}
 		}
-		message, err := m.messageSender(context.Background(), conversationName, text)
+		message, err := m.messageSender(context.Background(), conversation, text)
 		return messageSentMsg{message: message, request: requestID, err: err}
 	}
 }

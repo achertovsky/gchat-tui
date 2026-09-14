@@ -50,6 +50,8 @@ type APIError struct {
 	Hint       string
 }
 
+var ErrInvitationPending = errors.New("this direct-message invitation has not been accepted; accept it in Google Chat before sending a message")
+
 func (e *APIError) Error() string {
 	base := fmt.Sprintf("Google Chat API %s failed (HTTP %d)", e.Operation, e.StatusCode)
 	if e.Detail != "" {
@@ -170,6 +172,36 @@ func (c *Client) CreateMessage(ctx context.Context, spaceName, text string) (Mes
 		return Message{}, apiError("create message", err)
 	}
 	return toMessage(response), nil
+}
+
+// HasPendingInvitation reports whether a conversation contains an invitation
+// that has not yet been accepted.
+func (c *Client) HasPendingInvitation(ctx context.Context, spaceName string) (bool, error) {
+	if !validSpaceName(spaceName) {
+		return false, errors.New("space name must use the format spaces/{space}")
+	}
+
+	var pageToken string
+	for {
+		response, err := c.service.Spaces.Members.List(spaceName).
+			ShowInvited(true).
+			PageSize(1000).
+			PageToken(pageToken).
+			Context(ctx).
+			Do()
+		if err != nil {
+			return false, apiError("list memberships", err)
+		}
+		for _, membership := range response.Memberships {
+			if membership.State == "INVITED" {
+				return true, nil
+			}
+		}
+		if response.NextPageToken == "" {
+			return false, nil
+		}
+		pageToken = response.NextPageToken
+	}
 }
 
 func validSpaceName(name string) bool {
