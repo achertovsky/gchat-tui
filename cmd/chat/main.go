@@ -150,12 +150,17 @@ func main() {
 			return ui.Message{}, err
 		}
 		if conversation.Type == "DIRECT_MESSAGE" {
-			pending, err := chatClient.HasPendingInvitation(ctx, conversation.Name)
+			email, err := provider.Email(ctx)
+			if err != nil {
+				logger.Warn("membership check failed: authenticated account identity is unavailable")
+				return ui.Message{}, err
+			}
+			membershipState, err := chatClient.MembershipState(ctx, conversation.Name, email)
 			if err != nil {
 				logger.Warn(fmt.Sprintf("membership check failed: %v", err))
 				return ui.Message{}, err
 			}
-			if pending {
+			if membershipState != "JOINED" {
 				return ui.Message{}, googlechat.ErrInvitationPending
 			}
 		}

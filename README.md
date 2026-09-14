@@ -49,6 +49,7 @@ The application requests these user-authorized Google Chat scopes:
 - `chat.messages.readonly` to read messages
 - `chat.messages.create` to send messages
 - `chat.memberships.readonly` to detect pending direct-message invitations
+- `userinfo.email` to verify that the signed-in account joined a direct message
 
 Run `go run ./cmd/chat login` to authorize the app in a browser. Use
 `go run ./cmd/chat login --reauthorize` to force a new consent flow after

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -23,6 +24,8 @@ var Scopes = []string{
 	"https://www.googleapis.com/auth/chat.messages.readonly",
 	"https://www.googleapis.com/auth/chat.messages.create",
 	"https://www.googleapis.com/auth/chat.memberships.readonly",
+	"openid",
+	"https://www.googleapis.com/auth/userinfo.email",
 }
 
 var ErrNotAuthenticated = errors.New("not authenticated; run `chat login` first")
@@ -93,6 +96,32 @@ func (o *OAuth) Token(ctx context.Context) (*oauth2.Token, error) {
 // HTTPClient returns an HTTP client that adds and refreshes OAuth credentials.
 func (o *OAuth) HTTPClient(ctx context.Context) *http.Client {
 	return oauth2.NewClient(ctx, oauth2.TokenSource(tokenSource{provider: o, context: ctx}))
+}
+
+// Email returns the email address of the authenticated Google account.
+func (o *OAuth) Email(ctx context.Context) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openidconnect.googleapis.com/v1/userinfo", nil)
+	if err != nil {
+		return "", fmt.Errorf("create account identity request: %w", err)
+	}
+	response, err := o.HTTPClient(ctx).Do(request)
+	if err != nil {
+		return "", fmt.Errorf("retrieve account identity: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("retrieve account identity: Google returned HTTP %d", response.StatusCode)
+	}
+	var identity struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&identity); err != nil {
+		return "", fmt.Errorf("decode account identity: %w", err)
+	}
+	if identity.Email == "" {
+		return "", errors.New("Google did not provide the authenticated account email")
+	}
+	return identity.Email, nil
 }
 
 // Logout removes all locally stored OAuth credentials.

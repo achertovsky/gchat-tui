@@ -177,34 +177,22 @@ func (c *Client) CreateMessage(ctx context.Context, spaceName, text string) (Mes
 	return toMessage(response), nil
 }
 
-// HasPendingInvitation reports whether a conversation contains an invitation
-// that has not yet been accepted.
-func (c *Client) HasPendingInvitation(ctx context.Context, spaceName string) (bool, error) {
+// MembershipState returns the authenticated user's membership state for a
+// conversation. The Chat API accepts the user's email as a membership alias.
+func (c *Client) MembershipState(ctx context.Context, spaceName, email string) (string, error) {
 	if !validSpaceName(spaceName) {
-		return false, errors.New("space name must use the format spaces/{space}")
+		return "", errors.New("space name must use the format spaces/{space}")
 	}
-
-	var pageToken string
-	for {
-		response, err := c.service.Spaces.Members.List(spaceName).
-			ShowInvited(true).
-			PageSize(1000).
-			PageToken(pageToken).
-			Context(ctx).
-			Do()
-		if err != nil {
-			return false, apiError("list memberships", err)
-		}
-		for _, membership := range response.Memberships {
-			if membership.State == "INVITED" {
-				return true, nil
-			}
-		}
-		if response.NextPageToken == "" {
-			return false, nil
-		}
-		pageToken = response.NextPageToken
+	if strings.TrimSpace(email) == "" {
+		return "", errors.New("account email must not be empty")
 	}
+	membership, err := c.service.Spaces.Members.Get(spaceName + "/members/" + email).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return "", apiError("get membership", err)
+	}
+	return membership.State, nil
 }
 
 func validSpaceName(name string) bool {
