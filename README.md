@@ -49,7 +49,9 @@ The application requests these user-authorized Google Chat scopes:
 - `chat.messages.readonly` to read messages
 - `chat.messages.create` to send messages
 
-Run `go run ./cmd/chat login` to authorize the app in a browser. OAuth
+Run `go run ./cmd/chat login` to authorize the app in a browser. Use
+`go run ./cmd/chat login --reauthorize` to force a new consent flow after
+changing the scopes. OAuth
 credentials are stored in the OS credential store when available, with a
 local, owner-only fallback file when it is not. Run
 `go run ./cmd/chat logout` to delete them.

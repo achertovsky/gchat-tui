@@ -29,6 +29,11 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "login":
+			reauthorize := len(os.Args) == 3 && os.Args[2] == "--reauthorize"
+			if len(os.Args) > 2 && !reauthorize {
+				fmt.Fprintln(os.Stderr, "usage: chat login [--reauthorize]")
+				os.Exit(2)
+			}
 			provider, err := auth.New(config.OAuthClientConfigPath, config.DataDir, func(url string) {
 				fmt.Fprintln(os.Stderr, "Opening a browser to authenticate.")
 				fmt.Fprintln(os.Stderr, "If no browser opens, copy this URL into one:")
@@ -45,12 +50,14 @@ func main() {
 				os.Exit(1)
 			}
 			fmt.Fprintln(os.Stderr, "Checking existing credentials...")
-			if _, err := provider.Token(context.Background()); err == nil {
-				fmt.Fprintln(os.Stderr, "You are already authenticated.")
-				logger.Info("OAuth login skipped because valid credentials already exist")
-				return
-			} else if !errors.Is(err, auth.ErrNotAuthenticated) {
-				logger.Warn("Stored OAuth credentials could not be used; requesting authorization again")
+			if !reauthorize {
+				if _, err := provider.Token(context.Background()); err == nil {
+					fmt.Fprintln(os.Stderr, "You are already authenticated.")
+					logger.Info("OAuth login skipped because valid credentials already exist")
+					return
+				} else if !errors.Is(err, auth.ErrNotAuthenticated) {
+					logger.Warn("Stored OAuth credentials could not be used; requesting authorization again")
+				}
 			}
 			err = provider.Login(context.Background())
 			if err != nil {
@@ -71,7 +78,7 @@ func main() {
 			logger.Info("OAuth credentials removed")
 			return
 		default:
-			fmt.Fprintln(os.Stderr, "usage: chat [login|logout]")
+			fmt.Fprintln(os.Stderr, "usage: chat [login [--reauthorize]|logout]")
 			os.Exit(2)
 		}
 	}

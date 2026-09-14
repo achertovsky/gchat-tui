@@ -38,19 +38,19 @@ func newTokenStore(dataDir string) tokenStore {
 }
 
 func (s secureTokenStore) Load() (*oauth2.Token, error) {
-	serialized, err := keyringGet()
-	if err == nil {
-		return decodeToken([]byte(serialized))
-	}
-
 	token, fileErr := loadTokenFile(s.filePath)
 	if fileErr == nil {
 		return token, nil
 	}
-	if errors.Is(fileErr, errTokenNotFound) {
-		return nil, errTokenNotFound
+	if !errors.Is(fileErr, errTokenNotFound) {
+		return nil, fmt.Errorf("read fallback credential file: %w", fileErr)
 	}
-	return nil, fmt.Errorf("read credential storage: %w", fileErr)
+
+	serialized, err := keyringGet()
+	if err == nil {
+		return decodeToken([]byte(serialized))
+	}
+	return nil, errTokenNotFound
 }
 
 func (s secureTokenStore) Save(token *oauth2.Token) error {
