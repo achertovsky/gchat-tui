@@ -22,3 +22,16 @@ go run ./cmd/chat
 go test ./...
 go build ./cmd/chat
 ```
+
+## Configuration
+
+All settings are optional. The default data directory uses the operating
+system's user configuration location. Override individual settings with:
+
+| Variable | Purpose |
+| --- | --- |
+| `GCHAT_TUI_DATA_DIR` | Local application data directory |
+| `GCHAT_TUI_OAUTH_CLIENT_CONFIG` | OAuth client configuration file |
+| `GCHAT_TUI_DATABASE_PATH` | SQLite database file |
+| `GCHAT_TUI_LOG_PATH` | Diagnostic log file |
+| `GCHAT_TUI_LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
