@@ -213,7 +213,13 @@ func (m model) content(width, height int) string {
 		return m.renderContent(width, height, title, []string{"Loading messages..."})
 	}
 	if m.messageError != nil {
-		return m.renderContent(width, height, title, []string{"Unable to load messages.", "", "Press Enter to retry."})
+		return m.renderContent(width, height, title, []string{
+			"Unable to load messages.",
+			"",
+			m.messageError.Error(),
+			"",
+			"Press Enter to retry.",
+		})
 	}
 	if len(m.messages) == 0 {
 		return m.renderContent(width, height, title, []string{"No messages in this conversation."})

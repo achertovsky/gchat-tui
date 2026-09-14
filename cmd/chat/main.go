@@ -102,13 +102,16 @@ func main() {
 	}
 	loadMessages := func(ctx context.Context, conversationName, pageToken string) (ui.MessagePage, error) {
 		if authErr != nil {
+			logger.Warn("message loading failed: authentication initialization failed")
 			return ui.MessagePage{}, authErr
 		}
 		if _, err := provider.Token(ctx); err != nil {
+			logger.Warn("message loading failed: OAuth credentials are unavailable or invalid")
 			return ui.MessagePage{}, err
 		}
 		messages, nextPageToken, err := chatClient.ListMessagesPage(ctx, conversationName, pageToken)
 		if err != nil {
+			logger.Warn(fmt.Sprintf("message loading failed: %v", err))
 			return ui.MessagePage{}, err
 		}
 		page := ui.MessagePage{
