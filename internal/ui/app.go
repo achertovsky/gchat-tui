@@ -367,6 +367,7 @@ func (m model) sendMessage(text string, requestID int) tea.Cmd {
 }
 
 func (m model) renderContent(width, height int, title string, lines []string) string {
+	lines = wrapLines(lines, max(1, width-4))
 	availableLines := max(1, height-4)
 	maxOffset := max(0, len(lines)-availableLines)
 	offset := min(m.scrollOffset, maxOffset)
@@ -377,6 +378,28 @@ func (m model) renderContent(width, height int, title string, lines []string) st
 		Height(height).
 		Padding(1, 2).
 		Render(title + "\n\n" + body)
+}
+
+func wrapLines(lines []string, width int) []string {
+	wrapped := make([]string, 0, len(lines))
+	for _, line := range lines {
+		words := strings.Fields(line)
+		if len(words) == 0 {
+			wrapped = append(wrapped, "")
+			continue
+		}
+		current := words[0]
+		for _, word := range words[1:] {
+			if len(current)+1+len(word) > width {
+				wrapped = append(wrapped, current)
+				current = word
+				continue
+			}
+			current += " " + word
+		}
+		wrapped = append(wrapped, current)
+	}
+	return wrapped
 }
 
 func renderMessages(messages []Message) []string {

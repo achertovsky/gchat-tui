@@ -219,9 +219,6 @@ func apiError(operation string, err error) error {
 			StatusCode: googleError.Code,
 			Detail:     sanitizeAPIError(googleError.Message),
 		}
-		if operation == "create message" && googleError.Code == http.StatusNotFound {
-			apiError.Hint = "configure the Google Chat app in Google Cloud and verify that the signed-in user is a member of this conversation"
-		}
 		return apiError
 	}
 	return fmt.Errorf("Google Chat API %s: %w", operation, err)
