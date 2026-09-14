@@ -35,3 +35,21 @@ system's user configuration location. Override individual settings with:
 | `GCHAT_TUI_DATABASE_PATH` | SQLite database file |
 | `GCHAT_TUI_LOG_PATH` | Diagnostic log file |
 | `GCHAT_TUI_LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
+
+## Google OAuth setup
+
+Before logging in, create a Google Cloud project, enable the Google Chat API,
+configure the OAuth consent screen, and create a **Desktop app** OAuth client.
+Download its client configuration JSON and set
+`GCHAT_TUI_OAUTH_CLIENT_CONFIG` to its location.
+
+The application requests these user-authorized Google Chat scopes:
+
+- `chat.spaces.readonly` to list conversations
+- `chat.messages.readonly` to read messages
+- `chat.messages.create` to send messages
+
+Run `go run ./cmd/chat login` to authorize the app in a browser. OAuth
+credentials are stored in the OS credential store when available, with a
+local, owner-only fallback file when it is not. Run
+`go run ./cmd/chat logout` to delete them.
