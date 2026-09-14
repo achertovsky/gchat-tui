@@ -411,9 +411,9 @@ func (m model) composer(width int) string {
 	}
 	inputModel := m.input
 	inputModel.Width = max(1, width-4)
-	input := inputModel.View()
-	if !m.input.Focused() && m.input.Value() == "" {
-		input = "Press i to compose."
+	input := "> "
+	if m.input.Focused() || m.input.Value() != "" {
+		input = inputModel.View()
 	}
 	return lipgloss.NewStyle().
 		Width(width).
