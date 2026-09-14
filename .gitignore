@@ -1,0 +1,23 @@
+# Go build artifacts
+bin/
+/chat
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Local configuration and credentials
+.env
+.env.*
+config.local.*
+credentials.json
+token.json
+
+# SQLite databases
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
