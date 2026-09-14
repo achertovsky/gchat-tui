@@ -18,6 +18,7 @@ type Conversation struct {
 	Name        string
 	DisplayName string
 	Type        string
+	Unread      bool
 }
 
 // ConversationLoader retrieves the conversations displayed by the TUI.
@@ -468,6 +469,9 @@ func conversationLabel(conversation Conversation) string {
 		label = "[GC]"
 	case "SPACE":
 		label = "[S]"
+	}
+	if conversation.Unread {
+		label += " *"
 	}
 	return label + " " + displayName(conversation)
 }

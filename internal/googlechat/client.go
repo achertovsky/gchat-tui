@@ -183,6 +183,7 @@ func (c *Client) MembershipState(ctx context.Context, spaceName, email string) (
 	if !validSpaceName(spaceName) {
 		return "", errors.New("space name must use the format spaces/{space}")
 	}
+
 	if strings.TrimSpace(email) == "" {
 		return "", errors.New("account email must not be empty")
 	}
@@ -193,6 +194,37 @@ func (c *Client) MembershipState(ctx context.Context, spaceName, email string) (
 		return "", apiError("get membership", err)
 	}
 	return membership.State, nil
+}
+
+func (c *Client) IsUnread(ctx context.Context, space Space) (bool, error) {
+	state, err := c.service.Users.Spaces.GetSpaceReadState("users/me/" + space.Name + "/spaceReadState").Context(ctx).Do()
+	if err != nil {
+		return false, apiError("get read state", err)
+	}
+	messages, _, err := c.ListMessagesPage(ctx, space.Name, "")
+	if err != nil {
+		return false, err
+	}
+	if len(messages) == 0 {
+		return false, nil
+	}
+	if state.LastReadTime == "" {
+		return true, nil
+	}
+	readTime, err := time.Parse(time.RFC3339, state.LastReadTime)
+	if err != nil {
+		return false, fmt.Errorf("parse read state: %w", err)
+	}
+	return messages[len(messages)-1].CreateTime.After(readTime), nil
+}
+
+func (c *Client) MarkRead(ctx context.Context, spaceName string) error {
+	state := &chatapi.SpaceReadState{LastReadTime: time.Now().UTC().Format(time.RFC3339Nano)}
+	_, err := c.service.Users.Spaces.UpdateSpaceReadState("users/me/"+spaceName+"/spaceReadState", state).UpdateMask("lastReadTime").Context(ctx).Do()
+	if err != nil {
+		return apiError("update read state", err)
+	}
+	return nil
 }
 
 func validSpaceName(name string) bool {

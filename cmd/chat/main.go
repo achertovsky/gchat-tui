@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/achertovsky/gchat-tui/internal/auth"
 	"github.com/achertovsky/gchat-tui/internal/config"
@@ -101,12 +102,20 @@ func main() {
 		}
 		conversations := make([]ui.Conversation, len(spaces))
 		for index, space := range spaces {
+			unread, err := chatClient.IsUnread(ctx, space)
+			if err != nil {
+				logger.Warn("unread state unavailable for a conversation")
+			}
 			conversations[index] = ui.Conversation{
 				Name:        space.Name,
 				DisplayName: space.DisplayName,
 				Type:        space.Type,
+				Unread:      unread,
 			}
 		}
+		sort.SliceStable(conversations, func(left, right int) bool {
+			return conversations[left].Unread && !conversations[right].Unread
+		})
 		return conversations, nil
 	}
 	loadMessages := func(ctx context.Context, conversationName, pageToken string) (ui.MessagePage, error) {

@@ -24,6 +24,7 @@ var Scopes = []string{
 	"https://www.googleapis.com/auth/chat.messages.readonly",
 	"https://www.googleapis.com/auth/chat.messages.create",
 	"https://www.googleapis.com/auth/chat.memberships.readonly",
+	"https://www.googleapis.com/auth/chat.users.readstate",
 	"openid",
 	"https://www.googleapis.com/auth/userinfo.email",
 }
