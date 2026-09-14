@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -33,6 +34,10 @@ func main() {
 				fmt.Fprintln(os.Stderr, url)
 				fmt.Fprintln(os.Stderr, "Waiting for authorization; press Ctrl+C to cancel.")
 			})
+			if errors.Is(err, os.ErrNotExist) {
+				printOAuthSetup(config.OAuthClientConfigPath)
+				os.Exit(1)
+			}
 			if err == nil {
 				err = provider.Login(context.Background())
 			}
@@ -62,4 +67,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func printOAuthSetup(clientConfigPath string) {
+	fmt.Fprintln(os.Stderr, "Google OAuth setup is required before signing in.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "1. Open https://console.cloud.google.com/ and create or select a project.")
+	fmt.Fprintln(os.Stderr, "2. Open APIs & Services > Library, search for \"Google Chat API\", and enable it.")
+	fmt.Fprintln(os.Stderr, "3. Open Google Auth platform and configure the Branding, Audience, and Data Access pages.")
+	fmt.Fprintln(os.Stderr, "   If the app is External and still in testing, add your Google account as a test user.")
+	fmt.Fprintln(os.Stderr, "4. Open Google Auth platform > Clients, create an OAuth client ID, and select \"Desktop app\".")
+	fmt.Fprintln(os.Stderr, "5. Download the OAuth client JSON file.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "The application expected that file at:")
+	fmt.Fprintln(os.Stderr, "  "+clientConfigPath)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Either copy the downloaded file there, or set its location for this shell:")
+	fmt.Fprintln(os.Stderr, "  export GCHAT_TUI_OAUTH_CLIENT_CONFIG=/path/to/client_secret.json")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Then run `chat login` again. The application will open a browser for authorization.")
 }
