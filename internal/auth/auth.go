@@ -29,6 +29,7 @@ var ErrNotAuthenticated = errors.New("not authenticated; run `chat login` first"
 // Provider exposes authenticated tokens without coupling callers to OAuth.
 type Provider interface {
 	Token(context.Context) (*oauth2.Token, error)
+	HTTPClient(context.Context) *http.Client
 	Logout() error
 }
 
@@ -86,6 +87,11 @@ func (o *OAuth) Token(ctx context.Context) (*oauth2.Token, error) {
 		return nil, fmt.Errorf("store refreshed OAuth credentials: %w", err)
 	}
 	return refreshed, nil
+}
+
+// HTTPClient returns an HTTP client that adds and refreshes OAuth credentials.
+func (o *OAuth) HTTPClient(ctx context.Context) *http.Client {
+	return oauth2.NewClient(ctx, oauth2.TokenSource(tokenSource{provider: o, context: ctx}))
 }
 
 // Logout removes all locally stored OAuth credentials.
@@ -201,6 +207,15 @@ func openBrowser(url string) error {
 		command = exec.Command("xdg-open", url)
 	}
 	return command.Start()
+}
+
+type tokenSource struct {
+	provider *OAuth
+	context  context.Context
+}
+
+func (s tokenSource) Token() (*oauth2.Token, error) {
+	return s.provider.Token(s.context)
 }
 
 var _ Provider = (*OAuth)(nil)

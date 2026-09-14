@@ -8,6 +8,7 @@ import (
 
 	"github.com/achertovsky/gchat-tui/internal/auth"
 	"github.com/achertovsky/gchat-tui/internal/config"
+	"github.com/achertovsky/gchat-tui/internal/googlechat"
 	"github.com/achertovsky/gchat-tui/internal/logging"
 	"github.com/achertovsky/gchat-tui/internal/ui"
 )
@@ -73,7 +74,33 @@ func main() {
 		}
 	}
 
-	if err := ui.Run(); err != nil {
+	provider, authErr := auth.New(config.OAuthClientConfigPath, config.DataDir, nil)
+	var chatClient *googlechat.Client
+	if authErr == nil {
+		chatClient, authErr = googlechat.New(provider.HTTPClient(context.Background()))
+	}
+	loadConversations := func(ctx context.Context) ([]ui.Conversation, error) {
+		if authErr != nil {
+			return nil, authErr
+		}
+		if _, err := provider.Token(ctx); err != nil {
+			return nil, err
+		}
+		spaces, err := chatClient.ListSpaces(ctx)
+		if err != nil {
+			return nil, err
+		}
+		conversations := make([]ui.Conversation, len(spaces))
+		for index, space := range spaces {
+			conversations[index] = ui.Conversation{
+				Name:        space.Name,
+				DisplayName: space.DisplayName,
+				Type:        space.Type,
+			}
+		}
+		return conversations, nil
+	}
+	if err := ui.Run(loadConversations); err != nil {
 		logger.Error("terminal UI exited with an error")
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

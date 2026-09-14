@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,28 +9,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var conversations = []string{
-	"Engineering",
-	"Design Team",
-	"Ada Lovelace",
-	"Project Updates",
+// Conversation is a sidebar item supplied by the application.
+type Conversation struct {
+	Name        string
+	DisplayName string
+	Type        string
 }
 
+// ConversationLoader retrieves the conversations displayed by the TUI.
+type ConversationLoader func(context.Context) ([]Conversation, error)
+
 type model struct {
-	cursor   int
-	selected int
-	width    int
-	height   int
+	loader        ConversationLoader
+	conversations []Conversation
+	cursor        int
+	selected      int
+	loading       bool
+	loadError     error
+	width         int
+	height        int
 }
 
 // Run starts the terminal UI.
-func Run() error {
-	_, err := tea.NewProgram(model{selected: -1}, tea.WithAltScreen()).Run()
+func Run(loader ConversationLoader) error {
+	_, err := tea.NewProgram(model{loader: loader, selected: -1, loading: true}, tea.WithAltScreen()).Run()
 	return err
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return m.loadConversations()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -43,15 +51,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(conversations)-1 {
+			if m.cursor < len(m.conversations)-1 {
 				m.cursor++
 			}
 		case "enter":
-			m.selected = m.cursor
+			if len(m.conversations) > 0 {
+				m.selected = m.cursor
+			}
+		case "r":
+			m.loading = true
+			m.loadError = nil
+			return m, m.loadConversations()
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case conversationsLoadedMsg:
+		m.loading = false
+		m.loadError = msg.err
+		if msg.err == nil {
+			m.conversations = msg.conversations
+			m.cursor = 0
+			m.selected = -1
+		}
 	}
 
 	return m, nil
@@ -71,7 +93,7 @@ func (m model) View() string {
 	footer := lipgloss.NewStyle().
 		Width(m.width).
 		Foreground(lipgloss.Color("241")).
-		Render("↑/k up  ↓/j down  enter select  q quit")
+		Render("↑/k up  ↓/j down  enter select  r refresh  q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content),
@@ -81,12 +103,20 @@ func (m model) View() string {
 
 func (m model) sidebar(width, height int) string {
 	var items []string
-	for index, conversation := range conversations {
+	for index, conversation := range m.conversations {
 		prefix := "  "
 		if index == m.cursor {
 			prefix = "> "
 		}
-		items = append(items, prefix+conversation)
+		items = append(items, prefix+displayName(conversation))
+	}
+	body := "Loading conversations..."
+	if m.loadError != nil {
+		body = "Unable to load conversations.\n\nPress r to retry."
+	} else if !m.loading && len(items) == 0 {
+		body = "No conversations found."
+	} else if len(items) > 0 {
+		body = strings.Join(items, "\n")
 	}
 
 	return lipgloss.NewStyle().
@@ -95,17 +125,17 @@ func (m model) sidebar(width, height int) string {
 		Border(lipgloss.RoundedBorder(), false, true, false, false).
 		BorderForeground(lipgloss.Color("240")).
 		Padding(1).
-		Render("Conversations\n\n" + strings.Join(items, "\n"))
+		Render("Conversations\n\n" + body)
 }
 
 func (m model) content(width, height int) string {
 	body := "Choose a conversation and press Enter."
 	title := "Messages"
-	if m.selected >= 0 {
-		title = conversations[m.selected]
+	if m.selected >= 0 && m.selected < len(m.conversations) {
+		title = displayName(m.conversations[m.selected])
 		body = fmt.Sprintf(
 			"Placeholder messages for %s\n\nNo messages have been loaded yet.",
-			conversations[m.selected],
+			title,
 		)
 	}
 
@@ -114,6 +144,31 @@ func (m model) content(width, height int) string {
 		Height(height).
 		Padding(1, 2).
 		Render(title + "\n\n" + body)
+}
+
+type conversationsLoadedMsg struct {
+	conversations []Conversation
+	err           error
+}
+
+func (m model) loadConversations() tea.Cmd {
+	return func() tea.Msg {
+		if m.loader == nil {
+			return conversationsLoadedMsg{err: fmt.Errorf("conversation loading is not configured")}
+		}
+		conversations, err := m.loader(context.Background())
+		return conversationsLoadedMsg{conversations: conversations, err: err}
+	}
+}
+
+func displayName(conversation Conversation) string {
+	if strings.TrimSpace(conversation.DisplayName) != "" {
+		return conversation.DisplayName
+	}
+	if strings.TrimSpace(conversation.Name) != "" {
+		return conversation.Name
+	}
+	return "Unnamed conversation"
 }
 
 func min(a, b int) int {
