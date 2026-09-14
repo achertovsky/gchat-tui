@@ -120,12 +120,10 @@ func (c *Client) ListMessagesPage(ctx context.Context, spaceName, pageToken stri
 		return nil, "", errors.New("space name must use the format spaces/{space}")
 	}
 
-	response, err := c.service.Spaces.Messages.List(spaceName).
-		OrderBy("DESC").
-		PageSize(100).
-		PageToken(pageToken).
-		Context(ctx).
-		Do()
+	response, err := c.listMessages(ctx, spaceName, pageToken, "DESC")
+	if isAPIStatus(err, http.StatusBadRequest) {
+		response, err = c.listMessages(ctx, spaceName, pageToken, "create_time DESC")
+	}
 	if err != nil {
 		return nil, "", apiError("list messages", err)
 	}
@@ -135,6 +133,15 @@ func (c *Client) ListMessagesPage(ctx context.Context, spaceName, pageToken stri
 	}
 	sortMessages(messages)
 	return messages, response.NextPageToken, nil
+}
+
+func (c *Client) listMessages(ctx context.Context, spaceName, pageToken, orderBy string) (*chatapi.ListMessagesResponse, error) {
+	return c.service.Spaces.Messages.List(spaceName).
+		OrderBy(orderBy).
+		PageSize(100).
+		PageToken(pageToken).
+		Context(ctx).
+		Do()
 }
 
 // CreateMessage sends a plain-text message to a space.
@@ -200,4 +207,9 @@ func apiError(operation string, err error) error {
 		return &APIError{Operation: operation, StatusCode: googleError.Code}
 	}
 	return fmt.Errorf("Google Chat API %s: %w", operation, err)
+}
+
+func isAPIStatus(err error, statusCode int) bool {
+	var googleError *googleapi.Error
+	return errors.As(err, &googleError) && googleError.Code == statusCode
 }
