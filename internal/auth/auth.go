@@ -134,6 +134,7 @@ func (o *OAuth) authorize(ctx context.Context) (*oauth2.Token, error) {
 	url := config.AuthCodeURL(
 		state,
 		oauth2.AccessTypeOffline,
+		oauth2.ApprovalForce,
 		oauth2.S256ChallengeOption(verifier),
 	)
 	_ = openBrowser(url)
