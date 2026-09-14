@@ -45,9 +45,13 @@ type Message struct {
 type APIError struct {
 	Operation  string
 	StatusCode int
+	Hint       string
 }
 
 func (e *APIError) Error() string {
+	if e.Hint != "" {
+		return fmt.Sprintf("Google Chat API %s failed (HTTP %d): %s", e.Operation, e.StatusCode, e.Hint)
+	}
 	return fmt.Sprintf("Google Chat API %s failed (HTTP %d)", e.Operation, e.StatusCode)
 }
 
@@ -204,7 +208,11 @@ func sortMessages(messages []Message) {
 func apiError(operation string, err error) error {
 	var googleError *googleapi.Error
 	if errors.As(err, &googleError) {
-		return &APIError{Operation: operation, StatusCode: googleError.Code}
+		apiError := &APIError{Operation: operation, StatusCode: googleError.Code}
+		if operation == "create message" && googleError.Code == http.StatusNotFound {
+			apiError.Hint = "configure the Google Chat app in Google Cloud and verify that the signed-in user is a member of this conversation"
+		}
+		return apiError
 	}
 	return fmt.Errorf("Google Chat API %s: %w", operation, err)
 }
