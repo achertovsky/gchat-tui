@@ -142,7 +142,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.messageLoading = true
 				m.scrollOffset = 0
 				m.messageRequest++
-				return m, m.loadMessages("", false)
+				focus := m.input.Focus()
+				return m, tea.Batch(m.loadMessages("", false), focus)
 			}
 		case "r":
 			m.loading = true
@@ -151,7 +152,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "i":
 			if m.selected >= 0 && !m.sending {
 				m.sendError = nil
-				return m, m.input.Focus()
+				focus := m.input.Focus()
+				return m, focus
 			}
 		case "u":
 			if m.selected >= 0 && m.nextPageToken != "" && !m.messageLoading {
