@@ -50,7 +50,10 @@ type APIError struct {
 	Hint       string
 }
 
-var ErrInvitationPending = errors.New("this direct-message invitation has not been accepted; accept it in Google Chat before sending a message")
+var ErrInvitationPending = errors.New(
+	"this direct-message invitation is pending and must be accepted before sending a message\n" +
+		"Open Google Chat to accept it: https://chat.google.com/",
+)
 
 func (e *APIError) Error() string {
 	base := fmt.Sprintf("Google Chat API %s failed (HTTP %d)", e.Operation, e.StatusCode)
